@@ -18,4 +18,4 @@ jobs:
             cd ~/main/platinum-back
             git pull origin main
             docker compose up -d --build app
-            docker compose exec -T app npm run migration:run
+            docker compose exec -T app npx typeorm migration:run -d dist/database/data-source.js
