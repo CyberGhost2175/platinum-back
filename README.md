@@ -5,7 +5,7 @@ NestJS 11 + TypeORM + PostgreSQL + Redis. API prefix: `/api`. Документа
 ## Требования
 
 - Docker и Docker Compose **или** Node.js 22+, PostgreSQL 16, Redis 7
-- База: `platinum`, порт `5432`, пользователь `developer`, пароль `123`
+- База: `platinum`, порт `5432`
 
 ## Быстрый старт (Docker)
 
@@ -22,10 +22,6 @@ docker compose up --build
 docker compose exec app node dist/database/seed.js
 ```
 
-Сервис: http://localhost:8080/api  
-Health: http://localhost:8080/health  
-Swagger: http://localhost:8080/docs  
-OpenAPI JSON: http://localhost:8080/docs-json
 
 ### Учётные записи после seed
 
@@ -64,7 +60,7 @@ npm run seed
 npm run start:dev
 ```
 
-`.env` должен совпадать с Postgres: `DB_USERNAME=developer`, `DB_PASSWORD=123`, `DB_DATABASE=platinum`, `DB_PORT=5432`. `SESSION_SECRET` и JWT-секреты — не короче 16 символов (пароль БД `123` для них не подходит).
+
 
 ## Переменные окружения
 
