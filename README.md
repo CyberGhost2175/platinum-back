@@ -27,16 +27,20 @@ nano .env
 
 ```bash
 docker compose up -d --build
-docker compose exec app node dist/database/seed.js
+docker compose exec app npm run seed:prod
 ```
 
-Миграции накатываются сами при старте `app`.
+Миграции накатываются сами при старте `app`. Вручную из контейнера (там нет `src/`, только `dist/`):
+
+```bash
+docker compose exec app npm run migration:run:prod
+```
 
 API: `http://IP:8080/api`  
 Health: `http://IP:8080/health`  
 Swagger: `http://IP:8080/docs`
 
-Postgres и Redis с хоста доступны только на `127.0.0.1` (не в интернет). Снаружи открыт порт `PORT` (по умолчанию 8080).
+Postgres, Redis и API с хоста слушаются только на `127.0.0.1`. Снаружи нужен nginx (или снимите `127.0.0.1:` у порта `PORT` в compose).
 
 ### Учётные записи после seed
 
