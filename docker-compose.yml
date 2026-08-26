@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: platinum-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: developer
+      POSTGRES_PASSWORD: '123'
+      POSTGRES_DB: platinum
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U developer -d platinum']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: platinum-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: platinum-app
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      API_PREFIX: api
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: platinum
+      DB_PASSWORD: platinum
+      DB_DATABASE: platinum
+      DB_SYNCHRONIZE: 'false'
+      DB_LOGGING: 'false'
+      DB_SSL: 'false'
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ''
+      REDIS_DB: 0
+      SESSION_SECRET: local-dev-session-secret-change-me
+      SESSION_NAME: platinum.sid
+      SESSION_TTL_SECONDS: 86400
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+      THROTTLE_TTL_MS: 60000
+      THROTTLE_LIMIT: 100
+      JWT_ACCESS_SECRET: local-dev-jwt-access-secret
+      JWT_REFRESH_SECRET: local-dev-jwt-refresh-secret
+      JWT_ACCESS_TTL_SECONDS: 900
+      JWT_REFRESH_TTL_SECONDS: 604800
+      PASSWORD_RESET_TTL_SECONDS: 900
+      TOTP_ISSUER: Platinum CRM
+      AUTH_2FA_ENABLED: 'false'
+      STALE_ITEM_DAYS: 180
+      LOW_STOCK_THRESHOLD: 2
+      CATALOG_SEARCH_DRIVER: postgres
+      ANALYTICS_CACHE_TTL_SECONDS: 90
+      ANALYTICS_MV_STALE_SECONDS: 60
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
