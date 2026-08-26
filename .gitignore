@@ -2,6 +2,8 @@ node_modules
 dist
 coverage
 .env
+deploy_key
+deploy_key.pub
 *.log
 .DS_Store
 .idea

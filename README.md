@@ -2,30 +2,39 @@
 
 NestJS 11 + TypeORM + PostgreSQL + Redis. API prefix: `/api`. Документация: Swagger UI.
 
-## Требования
+Все настройки — из `.env`. Шаблон: `.env.example`.
 
-- Docker и Docker Compose **или** Node.js 22+, PostgreSQL 16, Redis 7
-- База: `platinum`, порт `5432`, пользователь `developer`, пароль `123`
+## VPS (Docker)
 
-## Быстрый старт (Docker)
+На сервере в корне репозитория:
 
 ```bash
+git clone https://github.com/CyberGhost2175/platinum-back.git
+cd platinum-back
 cp .env.example .env
-docker compose up --build
+nano .env
 ```
 
-При старте контейнера `app` TypeORM сам применяет миграции (`migrationsRun: true`).
+В `.env` на VPS обязательно:
 
-Затем seed:
+- `NODE_ENV=production`
+- `DB_HOST=postgres` и `REDIS_HOST=redis` (имена контейнеров, не localhost)
+- свой `DB_PASSWORD`
+- `SESSION_SECRET`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` — разные, ≥16 символов (`openssl rand -hex 32`)
+- `CORS_ORIGINS=https://твой-фронт.ru`
 
 ```bash
+docker compose up -d --build
 docker compose exec app node dist/database/seed.js
 ```
 
-Сервис: http://localhost:8080/api  
-Health: http://localhost:8080/health  
-Swagger: http://localhost:8080/docs  
-OpenAPI JSON: http://localhost:8080/docs-json
+Миграции накатываются сами при старте `app`.
+
+API: `http://IP:8080/api`  
+Health: `http://IP:8080/health`  
+Swagger: `http://IP:8080/docs`
+
+Postgres и Redis с хоста доступны только на `127.0.0.1` (не в интернет). Снаружи открыт порт `PORT` (по умолчанию 8080).
 
 ### Учётные записи после seed
 
@@ -34,37 +43,31 @@ OpenAPI JSON: http://localhost:8080/docs-json
 | admin | `admin@example.com` | `admin1234` |
 | store_manager | `manager@example.com` | `manager12` |
 | cashier | `cashier@example.com` | `cashier12` |
+| warehouse | `warehouse@example.com` | `warehouse12` |
+| online_manager | `online@example.com` | `online1234` |
 
-2FA выключена (`AUTH_2FA_ENABLED=false`). Чтобы вернуть TOTP для admin/store_manager, поставьте `true` и перезапустите.
+Сразу смени пароли. 2FA выключена (`AUTH_2FA_ENABLED=false`).
 
-Салон в seed: `22222222-2222-4222-8222-222222222222`.
-
-### Если Postgres уже поднимался со старым пользователем
-
-Тома Docker не пересоздают роль при смене `POSTGRES_USER`. Нужен новый volume:
+Если Postgres в Docker уже поднимался с другим `DB_USERNAME`, том старый:
 
 ```bash
 docker compose down
+docker volume ls | grep postgres
 docker volume rm platinum-back_postgres_data
-docker compose up --build
+docker compose up -d --build
 ```
 
-Имя volume может отличаться (`docker volume ls | grep postgres`).
+## Локально без Docker-приложения
 
-## Локальный запуск без контейнера app
-
-Поднимите только инфраструктуру:
+Нужен свой Postgres на `5432`. В `.env`: `DB_HOST=localhost`, `REDIS_HOST=localhost`.
 
 ```bash
-docker compose up postgres redis
 cp .env.example .env
 npm ci
 npm run migration:run
 npm run seed
 npm run start:dev
 ```
-
-`.env` должен совпадать с Postgres: `DB_USERNAME=developer`, `DB_PASSWORD=123`, `DB_DATABASE=platinum`, `DB_PORT=5432`. `SESSION_SECRET` и JWT-секреты — не короче 16 символов (пароль БД `123` для них не подходит).
 
 ## Переменные окружения
 
