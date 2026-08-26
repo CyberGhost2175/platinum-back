@@ -6,6 +6,8 @@ NestJS 11 + TypeORM + PostgreSQL + Redis. API prefix: `/api`. Документа
 
 ## VPS (Docker)
 
+Docker и Docker Compose. База поднимается контейнером из `.env`.
+
 На сервере в корне репозитория:
 
 ```bash
