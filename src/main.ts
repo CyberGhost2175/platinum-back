@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { parseCorsOrigins } from './common/cors-origins';
 import { Env } from './config/env.validation';
 import { setupSwagger, SWAGGER_PATH } from './config/swagger';
 
@@ -36,16 +37,9 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  const origins = config
-    .get('CORS_ORIGINS', { infer: true })
-    .split(',')
-    .map((origin) =>
-      origin
-        .trim()
-        .replace(/^['"]|['"]$/g, '')
-        .replace(/\/$/, ''),
-    )
-    .filter(Boolean);
+  const origins = parseCorsOrigins(
+    config.get('CORS_ORIGINS', { infer: true }),
+  );
   const allowedOrigins = new Set(origins);
   logger.log(`CORS origins: ${origins.join(', ') || '(none)'}`);
 
@@ -66,8 +60,10 @@ async function bootstrap(): Promise<void> {
       'X-Request-Id',
       'Accept',
       'Origin',
+      'X-Requested-With',
     ],
     optionsSuccessStatus: 204,
+    preflightContinue: false,
   });
 
   app.useGlobalPipes(

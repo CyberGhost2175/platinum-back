@@ -27,6 +27,9 @@ export class LocationGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
+    if (request?.method === 'OPTIONS') {
+      return true;
+    }
     const user = request.user;
     if (!user) {
       throw new ForbiddenException('Location scope required');

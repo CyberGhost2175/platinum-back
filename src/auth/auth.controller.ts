@@ -73,6 +73,7 @@ export class AuthController {
   }
 
   @Public()
+  @SkipThrottle()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

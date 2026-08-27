@@ -6,7 +6,10 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
+import { Env } from '../../config/env.validation';
+import { applyCorsHeaders, parseCorsOrigins } from '../cors-origins';
 
 export interface ErrorResponseBody {
   statusCode: number;
@@ -21,10 +24,18 @@ export interface ErrorResponseBody {
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
+  constructor(private readonly config: ConfigService<Env, true>) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    applyCorsHeaders(
+      response,
+      request.headers.origin,
+      new Set(parseCorsOrigins(this.config.get('CORS_ORIGINS', { infer: true }))),
+    );
 
     const status =
       exception instanceof HttpException

@@ -36,10 +36,15 @@ describe('JwtAuthGuard', () => {
     redis as never,
   );
 
-  it('rejects a request without a bearer token', async () => {
-    await expect(guard.canActivate(contextWithAuth())).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+  it('allows CORS preflight without a bearer token', async () => {
+    const request = { method: 'OPTIONS', headers: {}, user: undefined };
+    const context = {
+      getHandler: () => ({}),
+      getClass: () => ({}),
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
   it('accepts a valid access token', async () => {

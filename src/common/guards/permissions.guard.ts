@@ -26,6 +26,9 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
+    if (request?.method === 'OPTIONS') {
+      return true;
+    }
     const role = request.user?.role;
     if (!role || !hasPermission(role, required.resource, required.action)) {
       throw new ForbiddenException('Insufficient permissions');
