@@ -1,23 +1,11 @@
 import 'dotenv/config';
 import { hash } from 'bcryptjs';
 import { UserRole } from '../common/enums/user-role.enum';
-import { ItemAuditAction } from '../inventory/enums/item-audit-action.enum';
-import { ItemStatus } from '../inventory/enums/item-status.enum';
-import { LocationType } from '../locations/enums/location-type.enum';
-import { GoldTone } from '../products/enums/gold-tone.enum';
-import { ItemCategory } from '../products/enums/item-category.enum';
-import { MetalCategory } from '../products/enums/metal-category.enum';
 import { UserStatus } from '../users/enums/user-status.enum';
 import dataSource from './data-source';
-import { Supplier } from '../products/entities/supplier.entity';
-import { Location } from '../locations/entities/location.entity';
 import { User } from '../users/entities/user.entity';
-import { Product } from '../products/entities/product.entity';
-import { Batch } from '../inventory/entities/batch.entity';
-import { Item } from '../inventory/entities/item.entity';
-import { ItemAuditLog } from '../inventory/entities/item-audit-log.entity';
-import { Customer } from '../customers/entities/customer.entity';
 
+/** Stable IDs from the old demo seed — used only to wipe leftover mock rows. */
 const IDS = {
   supplierYuv: '11111111-1111-4111-8111-111111111111',
   supplierAlmaz: '11111111-1111-4111-8111-111111111112',
@@ -43,276 +31,258 @@ const IDS = {
   customer: '77777777-7777-4777-8777-777777777771',
 } as const;
 
-async function seed(): Promise<void> {
-  await dataSource.initialize();
+const SEED_LOCATION_IDS = [IDS.warehouse, IDS.store, IDS.display];
+const SEED_PRODUCT_IDS = [
+  IDS.productRing,
+  IDS.productEarrings,
+  IDS.productStuds,
+  IDS.productChain,
+];
+const SEED_ITEM_IDS = [
+  IDS.itemRing1,
+  IDS.itemRing2,
+  IDS.itemEarrings,
+  IDS.itemStuds,
+  IDS.itemChain,
+];
+const SEED_SUPPLIER_IDS = [
+  IDS.supplierYuv,
+  IDS.supplierAlmaz,
+  IDS.supplierSilver,
+];
+const SEED_DEMO_USER_IDS = [
+  IDS.cashier,
+  IDS.manager,
+  IDS.warehouseUser,
+  IDS.onlineUser,
+];
+const SEED_DEMO_EMAILS = [
+  'cashier@example.com',
+  'manager@example.com',
+  'warehouse@example.com',
+  'online@example.com',
+];
 
-  const suppliers = dataSource.getRepository(Supplier);
-  const locations = dataSource.getRepository(Location);
-  const users = dataSource.getRepository(User);
-  const products = dataSource.getRepository(Product);
-  const batches = dataSource.getRepository(Batch);
-  const items = dataSource.getRepository(Item);
-  const history = dataSource.getRepository(ItemAuditLog);
-  const customers = dataSource.getRepository(Customer);
+const ADMIN_EMAIL = 'admin@example.com';
+const ADMIN_PASSWORD = 'admin1234';
 
-  await suppliers.save([
-    {
-      id: IDS.supplierYuv,
-      name: 'Ювелирторг',
-      phone: '+74951234567',
-      email: 'sales@juvelirtorg.example',
-      isActive: true,
-    },
-    {
-      id: IDS.supplierAlmaz,
-      name: 'Алмаз-Холдинг',
-      phone: '+74957654321',
-      email: 'opt@almaz.example',
-      isActive: true,
-    },
-    {
-      id: IDS.supplierSilver,
-      name: 'Серебряный век',
-      phone: '+78121230000',
-      email: 'hello@silverage.example',
-      isActive: true,
-    },
-  ]);
+async function wipeMockData(): Promise<void> {
+  await dataSource.transaction(async (manager) => {
+    const q = (sql: string, params: unknown[] = []) =>
+      manager.query(sql, params);
 
-  await locations.save({
-    id: IDS.warehouse,
-    type: LocationType.WAREHOUSE,
-    name: 'Главный склад',
-    parentId: null,
-  });
-  await locations.save({
-    id: IDS.store,
-    type: LocationType.STORE,
-    name: 'Салон на Тверской',
-    parentId: IDS.warehouse,
-  });
-  await locations.save({
-    id: IDS.display,
-    type: LocationType.DISPLAY,
-    name: 'Витрина зала 1',
-    parentId: IDS.store,
-  });
+    const doomedSales = (await q(
+      `
+      SELECT id FROM sales
+      WHERE location_id = ANY($1::uuid[])
+         OR seller_id = ANY($2::uuid[])
+         OR customer_id = $3
+         OR id IN (
+           SELECT sale_id FROM sale_items
+           WHERE product_id = ANY($4::uuid[])
+              OR item_id = ANY($5::uuid[])
+         )
+      `,
+      [
+        SEED_LOCATION_IDS,
+        SEED_DEMO_USER_IDS,
+        IDS.customer,
+        SEED_PRODUCT_IDS,
+        SEED_ITEM_IDS,
+      ],
+    )) as Array<{ id: string }>;
+    const doomedSaleIds = doomedSales.map((row) => row.id);
 
-  const passwordHash = await hash('admin1234', 10);
-  const cashierHash = await hash('cashier12', 10);
-  const managerHash = await hash('manager12', 10);
-  const warehouseHash = await hash('warehouse12', 10);
-  const onlineHash = await hash('online1234', 10);
-  await users.save([
-    {
-      id: IDS.admin,
-      email: 'admin@example.com',
-      phone: '+79001112233',
-      firstName: 'Local',
-      lastName: 'Admin',
-      role: UserRole.ADMIN,
-      status: UserStatus.ACTIVE,
-      locationId: IDS.store,
-      passwordHash,
-      totpEnabled: false,
-    },
-    {
-      id: IDS.cashier,
-      email: 'cashier@example.com',
-      phone: '+79001112234',
-      firstName: 'Anna',
-      lastName: 'Cashier',
-      role: UserRole.CASHIER,
-      status: UserStatus.ACTIVE,
-      locationId: IDS.store,
-      passwordHash: cashierHash,
-      totpEnabled: false,
-    },
-    {
-      id: IDS.manager,
-      email: 'manager@example.com',
-      phone: '+79001112235',
-      firstName: 'Ivan',
-      lastName: 'Manager',
-      role: UserRole.STORE_MANAGER,
-      status: UserStatus.ACTIVE,
-      locationId: IDS.store,
-      passwordHash: managerHash,
-      totpEnabled: false,
-    },
-    {
-      id: IDS.warehouseUser,
-      email: 'warehouse@example.com',
-      phone: '+79001112236',
-      firstName: 'Petr',
-      lastName: 'Skladov',
-      role: UserRole.WAREHOUSE,
-      status: UserStatus.ACTIVE,
-      locationId: IDS.warehouse,
-      passwordHash: warehouseHash,
-      totpEnabled: false,
-    },
-    {
-      id: IDS.onlineUser,
-      email: 'online@example.com',
-      phone: '+79001112237',
-      firstName: 'Elena',
-      lastName: 'Online',
-      role: UserRole.ONLINE_MANAGER,
-      status: UserStatus.ACTIVE,
-      locationId: null,
-      passwordHash: onlineHash,
-      totpEnabled: false,
-    },
-  ]);
+    if (doomedSaleIds.length > 0) {
+      await q(`DELETE FROM sale_items WHERE sale_id = ANY($1::uuid[])`, [
+        doomedSaleIds,
+      ]);
+      await q(
+        `
+        UPDATE sales SET original_sale_id = NULL
+        WHERE original_sale_id = ANY($1::uuid[])
+        `,
+        [doomedSaleIds],
+      );
+      await q(`DELETE FROM sales WHERE id = ANY($1::uuid[])`, [doomedSaleIds]);
+    }
 
-  await products.save([
-    {
-      id: IDS.productRing,
-      sku: '2000000000001',
-      name: 'Кольцо 585 красное золото',
-      weight: '2.350',
-      metalCategory: MetalCategory.GOLD,
-      goldTone: GoldTone.RED,
-      itemCategory: ItemCategory.RINGS,
-      supplierId: IDS.supplierYuv,
-      price: '45990.00',
-      costPrice: '22100.00',
-    },
-    {
-      id: IDS.productEarrings,
-      sku: '2000000000002',
-      name: 'Серьги серебро 925',
-      weight: '4.120',
-      metalCategory: MetalCategory.SILVER,
-      goldTone: null,
-      itemCategory: ItemCategory.EARRINGS,
-      supplierId: IDS.supplierSilver,
-      price: '8900.00',
-      costPrice: '4100.00',
-    },
-    {
-      id: IDS.productStuds,
-      sku: '2000000000003',
-      name: 'Пусеты с бриллиантами',
-      weight: '1.050',
-      metalCategory: MetalCategory.DIAMONDS,
-      goldTone: null,
-      itemCategory: ItemCategory.STUDS,
-      supplierId: IDS.supplierAlmaz,
-      price: '125000.00',
-      costPrice: '78000.00',
-    },
-    {
-      id: IDS.productChain,
-      sku: '2000000000004',
-      name: 'Цепь белое золото 585',
-      weight: '8.400',
-      metalCategory: MetalCategory.GOLD,
-      goldTone: GoldTone.WHITE,
-      itemCategory: ItemCategory.CHAINS,
-      supplierId: IDS.supplierYuv,
-      price: '67200.00',
-      costPrice: '31800.00',
-    },
-  ]);
-
-  await batches.save({
-    id: IDS.batch,
-    supplierId: IDS.supplierYuv,
-    receivedAt: new Date('2026-08-01T09:00:00.000Z'),
-    documents: [
-      {
-        name: 'upd-2026-08-01.pdf',
-        mimeType: 'application/pdf',
-        uploadedAt: '2026-08-01T09:05:00.000Z',
-      },
-    ],
-  });
-
-  const seededItems: Array<{
-    id: string;
-    uniqueTag: string;
-    productId: string;
-    locationId: string;
-    status: ItemStatus;
-    batchId: string | null;
-  }> = [
-    {
-      id: IDS.itemRing1,
-      uniqueTag: 'TAG-000001',
-      productId: IDS.productRing,
-      locationId: IDS.warehouse,
-      status: ItemStatus.IN_STOCK,
-      batchId: IDS.batch,
-    },
-    {
-      id: IDS.itemRing2,
-      uniqueTag: 'TAG-000002',
-      productId: IDS.productRing,
-      locationId: IDS.display,
-      status: ItemStatus.ON_DISPLAY,
-      batchId: IDS.batch,
-    },
-    {
-      id: IDS.itemEarrings,
-      uniqueTag: 'TAG-000003',
-      productId: IDS.productEarrings,
-      locationId: IDS.store,
-      status: ItemStatus.IN_STOCK,
-      batchId: null,
-    },
-    {
-      id: IDS.itemStuds,
-      uniqueTag: 'TAG-000004',
-      productId: IDS.productStuds,
-      locationId: IDS.display,
-      status: ItemStatus.ON_DISPLAY,
-      batchId: null,
-    },
-    {
-      id: IDS.itemChain,
-      uniqueTag: 'TAG-000005',
-      productId: IDS.productChain,
-      locationId: IDS.warehouse,
-      status: ItemStatus.IN_STOCK,
-      batchId: IDS.batch,
-    },
-  ];
-
-  await items.save(seededItems);
-
-  const existingLogs = await history.count();
-  if (existingLogs === 0) {
-    await history.save(
-      seededItems.map((item) =>
-        history.create({
-          itemId: item.id,
-          action: ItemAuditAction.CREATED,
-          fromStatus: null,
-          toStatus: item.status,
-          payload: { uniqueTag: item.uniqueTag, locationId: item.locationId },
-          actorUserId: IDS.admin,
-        }),
-      ),
+    await q(
+      `
+      DELETE FROM sale_items
+      WHERE product_id = ANY($1::uuid[])
+         OR item_id = ANY($2::uuid[])
+      `,
+      [SEED_PRODUCT_IDS, SEED_ITEM_IDS],
     );
+
+    const doomedOrders = (await q(
+      `
+      SELECT id FROM orders
+      WHERE customer_id = $1
+         OR id IN (
+           SELECT order_id FROM order_items
+           WHERE product_id = ANY($2::uuid[])
+              OR item_id = ANY($3::uuid[])
+         )
+      `,
+      [IDS.customer, SEED_PRODUCT_IDS, SEED_ITEM_IDS],
+    )) as Array<{ id: string }>;
+    const doomedOrderIds = doomedOrders.map((row) => row.id);
+    if (doomedOrderIds.length > 0) {
+      await q(`DELETE FROM order_items WHERE order_id = ANY($1::uuid[])`, [
+        doomedOrderIds,
+      ]);
+      await q(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [doomedOrderIds]);
+    }
+
+    await q(
+      `
+      DELETE FROM stock_check_discrepancies
+      WHERE item_id = ANY($1::uuid[])
+         OR product_id = ANY($2::uuid[])
+         OR stock_check_id IN (
+           SELECT id FROM stock_checks
+           WHERE location_id = ANY($3::uuid[])
+              OR responsible_user_id = ANY($4::uuid[])
+         )
+      `,
+      [SEED_ITEM_IDS, SEED_PRODUCT_IDS, SEED_LOCATION_IDS, SEED_DEMO_USER_IDS],
+    );
+    await q(
+      `
+      DELETE FROM stock_checks
+      WHERE location_id = ANY($1::uuid[])
+         OR responsible_user_id = ANY($2::uuid[])
+      `,
+      [SEED_LOCATION_IDS, SEED_DEMO_USER_IDS],
+    );
+
+    await q(
+      `
+      DELETE FROM shifts
+      WHERE location_id = ANY($1::uuid[])
+         OR cashier_id = ANY($2::uuid[])
+      `,
+      [SEED_LOCATION_IDS, SEED_DEMO_USER_IDS],
+    );
+
+    await q(`DELETE FROM item_audit_logs WHERE item_id = ANY($1::uuid[])`, [
+      SEED_ITEM_IDS,
+    ]);
+    await q(`DELETE FROM items WHERE id = ANY($1::uuid[])`, [SEED_ITEM_IDS]);
+
+    await q(
+      `
+      DELETE FROM sale_items
+      WHERE item_id IN (SELECT id FROM items WHERE location_id = ANY($1::uuid[]))
+      `,
+      [SEED_LOCATION_IDS],
+    );
+    await q(
+      `
+      DELETE FROM order_items
+      WHERE item_id IN (SELECT id FROM items WHERE location_id = ANY($1::uuid[]))
+      `,
+      [SEED_LOCATION_IDS],
+    );
+    await q(
+      `
+      DELETE FROM stock_check_discrepancies
+      WHERE item_id IN (SELECT id FROM items WHERE location_id = ANY($1::uuid[]))
+      `,
+      [SEED_LOCATION_IDS],
+    );
+    await q(
+      `
+      DELETE FROM item_audit_logs
+      WHERE item_id IN (SELECT id FROM items WHERE location_id = ANY($1::uuid[]))
+      `,
+      [SEED_LOCATION_IDS],
+    );
+    await q(`DELETE FROM items WHERE location_id = ANY($1::uuid[])`, [
+      SEED_LOCATION_IDS,
+    ]);
+    await q(
+      `UPDATE items SET batch_id = NULL WHERE batch_id = $1 OR batch_id IN (
+         SELECT id FROM batches WHERE supplier_id = ANY($2::uuid[])
+       )`,
+      [IDS.batch, SEED_SUPPLIER_IDS],
+    );
+    await q(
+      `DELETE FROM batches WHERE id = $1 OR supplier_id = ANY($2::uuid[])`,
+      [IDS.batch, SEED_SUPPLIER_IDS],
+    );
+    await q(`DELETE FROM products WHERE id = ANY($1::uuid[])`, [
+      SEED_PRODUCT_IDS,
+    ]);
+    await q(`DELETE FROM customers WHERE id = $1`, [IDS.customer]);
+
+    await q(`DELETE FROM receipt_sequences WHERE location_id = ANY($1::uuid[])`, [
+      SEED_LOCATION_IDS,
+    ]);
+
+    await q(
+      `UPDATE users SET location_id = NULL WHERE location_id = ANY($1::uuid[])`,
+      [SEED_LOCATION_IDS],
+    );
+    await q(
+      `UPDATE locations SET parent_id = NULL WHERE parent_id = ANY($1::uuid[])`,
+      [SEED_LOCATION_IDS],
+    );
+
+    await q(
+      `DELETE FROM users WHERE id = ANY($1::uuid[]) OR email = ANY($2::text[])`,
+      [SEED_DEMO_USER_IDS, SEED_DEMO_EMAILS],
+    );
+
+    await q(`DELETE FROM locations WHERE id = $1`, [IDS.display]);
+    await q(`DELETE FROM locations WHERE id = $1`, [IDS.store]);
+    await q(`DELETE FROM locations WHERE id = $1`, [IDS.warehouse]);
+
+    await q(
+      `
+      DELETE FROM suppliers
+      WHERE id = ANY($1::uuid[])
+        AND NOT EXISTS (
+          SELECT 1 FROM products WHERE products.supplier_id = suppliers.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM batches WHERE batches.supplier_id = suppliers.id
+        )
+      `,
+      [SEED_SUPPLIER_IDS],
+    );
+  });
+}
+
+async function ensureAdmin(): Promise<void> {
+  const users = dataSource.getRepository(User);
+  const existing = await users.findOne({ where: { email: ADMIN_EMAIL } });
+  if (existing) {
+    return;
   }
 
-  await customers.save({
-    id: IDS.customer,
-    fullName: 'Анна Сергеева',
-    phone: '+79005550101',
-    email: 'anna.sergeeva@example.com',
-    loyaltyPoints: 120,
-    notes: 'Постоянный клиент салона на Тверской',
+  await users.save({
+    id: IDS.admin,
+    email: ADMIN_EMAIL,
+    phone: null,
+    firstName: 'Admin',
+    lastName: 'Admin',
+    role: UserRole.ADMIN,
+    status: UserStatus.ACTIVE,
+    locationId: null,
+    passwordHash: await hash(ADMIN_PASSWORD, 10),
+    totpEnabled: false,
   });
+}
 
-  console.log('Seed completed.');
-  console.log('Admin login: admin@example.com / admin1234');
-  console.log('Cashier login: cashier@example.com / cashier12');
-  console.log('Manager login: manager@example.com / manager12');
-  console.log('Warehouse login: warehouse@example.com / warehouse12');
-  console.log('Online login: online@example.com / online1234');
+async function seed(): Promise<void> {
+  await dataSource.initialize();
+  await wipeMockData();
+  await ensureAdmin();
+  console.log('Mock catalog, locations, and demo users removed.');
+  console.log(`Bootstrap login (if created): ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
 }
 
 seed()

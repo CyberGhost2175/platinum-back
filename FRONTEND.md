@@ -110,8 +110,7 @@ Content-Type: application/json
 4. Обновление: `POST /api/auth/refresh` `{ refreshToken }`
 5. Выход: `POST /api/auth/logout` `{ refreshToken }`
 
-Seed: `cashier@example.com` / `cashier12`, `manager@example.com` / `manager12`, `admin@example.com` / `admin1234`, `warehouse@example.com` / `warehouse12`, `online@example.com` / `online1234`.  
-Салон: `22222222-2222-4222-8222-222222222222`.
+Bootstrap после seed: `admin@example.com` / `admin1234`. Демо-каталог и салоны не создаются — точку и товары заводят в UI.
 
 ### Касса
 ```
