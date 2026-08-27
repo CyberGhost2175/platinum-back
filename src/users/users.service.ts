@@ -10,6 +10,7 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { UserRole } from '../common/enums/user-role.enum';
 import { StockCheck } from '../inventory/entities/stock-check.entity';
 import { Sale } from '../sales/entities/sale.entity';
+import { Location } from '../locations/entities/location.entity';
 import { Shift } from '../shifts/entities/shift.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -110,7 +111,14 @@ export class UsersService {
     if (dto.firstName !== undefined) user.firstName = dto.firstName;
     if (dto.lastName !== undefined) user.lastName = dto.lastName;
     if (dto.phone !== undefined) user.phone = dto.phone || null;
-    if (dto.locationId !== undefined) user.locationId = dto.locationId;
+    if (dto.locationId !== undefined) {
+      user.locationId = dto.locationId;
+      user.location = dto.locationId
+        ? await this.usersRepository.manager.findOneByOrFail(Location, {
+            id: dto.locationId,
+          })
+        : null;
+    }
     if (dto.status !== undefined) {
       if (
         dto.status === UserStatus.BLOCKED &&
@@ -129,7 +137,8 @@ export class UsersService {
     }
 
     try {
-      return this.toSafe(await this.usersRepository.save(user));
+      await this.usersRepository.save(user);
+      return this.toSafe(await this.getOrFail(id));
     } catch (error) {
       this.rethrowUniqueEmail(error);
       throw error;
