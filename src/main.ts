@@ -23,6 +23,7 @@ async function bootstrap(): Promise<void> {
 
   app.use(
     helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
@@ -38,14 +39,35 @@ async function bootstrap(): Promise<void> {
   const origins = config
     .get('CORS_ORIGINS', { infer: true })
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) =>
+      origin
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+        .replace(/\/$/, ''),
+    )
     .filter(Boolean);
+  const allowedOrigins = new Set(origins);
+  logger.log(`CORS origins: ${origins.join(', ') || '(none)'}`);
 
   app.enableCors({
-    origin: origins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      logger.warn(`CORS blocked origin: ${origin}`);
+      callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Request-Id',
+      'Accept',
+      'Origin',
+    ],
+    optionsSuccessStatus: 204,
   });
 
   app.useGlobalPipes(
