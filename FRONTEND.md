@@ -107,6 +107,7 @@ Content-Type: application/json
 2. При `status: "ok"` сохрани `accessToken` + `refreshToken`, пользователь в `user`.
    (Ветки `totp_required` / `totp_enrollment` появятся только если бэк включит `AUTH_2FA_ENABLED=true`.)
 3. Шапка и оболочка роли: `GET /api/auth/me` — ФИО, точка, `roleMeta` (лейбл, цвет, меню), `permissions`, `workspace`.
+   Изменить свои ФИО / телефон / email: `PATCH /api/auth/me`. Точку себе меняет только admin.
 4. Обновление: `POST /api/auth/refresh` `{ refreshToken }`
 5. Выход: `POST /api/auth/logout` `{ refreshToken }`
 
@@ -204,6 +205,7 @@ Auth: **JWT**, если не указано Public.
 | POST | `/api/auth/reset-password` | Public | — | `{ token, newPassword }` | новый пароль |
 | PATCH | `/api/auth/password` | JWT | свой | `{ password }` (≥8) | сменить свой пароль (сессии отзываются) |
 | GET | `/api/auth/me` | JWT | свой | — | профиль роли: ФИО, точка, меню, права, workspace |
+| PATCH | `/api/auth/me` | JWT | свой | `UpdateProfileDto` | изменить ФИО, телефон, email; `locationId` — только admin |
 
 Ответ логина (`status`):
 
@@ -250,6 +252,8 @@ Auth: **JWT**, если не указано Public.
 | DELETE | `/api/locations/:id` | удалить пустую точку | — |
 
 Цикл в дереве (точка → сама себе / потомок) → 400. Непустая точка → 409.
+
+`PATCH /api/auth/me` с `locationId` назначает точку текущему admin. Остальные роли точку себе не меняют — её задаёт admin в сотрудниках.
 
 ### suppliers — поставщики
 Список для кассы: `GET /api/catalog/suppliers` (только `isActive`). CRUD ниже — **admin**.

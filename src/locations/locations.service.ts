@@ -141,13 +141,14 @@ export class LocationsService {
     if (dto.parentId) {
       await this.getOrFail(dto.parentId);
     }
-    return this.locations.save(
+    const saved = await this.locations.save(
       this.locations.create({
         name: dto.name.trim(),
         type: dto.type,
         parentId: dto.parentId ?? null,
       }),
     );
+    return this.findOneWithParent(saved.id);
   }
 
   async update(id: string, dto: UpdateLocationDto): Promise<Location> {
@@ -170,7 +171,8 @@ export class LocationsService {
       }
       location.parentId = dto.parentId;
     }
-    return this.locations.save(location);
+    await this.locations.save(location);
+    return this.findOneWithParent(id);
   }
 
   async remove(id: string): Promise<void> {
@@ -191,6 +193,17 @@ export class LocationsService {
       );
     }
     await this.locations.remove(location);
+  }
+
+  private async findOneWithParent(id: string): Promise<Location> {
+    const location = await this.locations.findOne({
+      where: { id },
+      relations: { parent: true },
+    });
+    if (!location) {
+      throw new NotFoundException('Location not found');
+    }
+    return location;
   }
 }
 

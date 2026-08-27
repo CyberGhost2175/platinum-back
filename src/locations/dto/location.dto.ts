@@ -5,6 +5,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 import { SanitizeText } from '../../common/decorators/sanitize-text.decorator';
@@ -13,6 +14,7 @@ import { LocationType } from '../enums/location-type.enum';
 export class CreateLocationDto {
   @ApiProperty({ example: 'Центральный склад' })
   @IsString()
+  @MinLength(1)
   @MaxLength(255)
   @SanitizeText()
   name: string;
@@ -34,6 +36,7 @@ export class UpdateLocationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(255)
   @SanitizeText()
   name?: string;

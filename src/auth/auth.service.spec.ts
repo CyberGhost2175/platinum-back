@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { hash } from 'bcryptjs';
 import { Env } from '../config/env.validation';
@@ -12,7 +12,10 @@ import { User } from '../users/entities/user.entity';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let usersService: jest.Mocked<Pick<UsersService, 'findByEmailForAuth' | 'findByEmail' | 'create'>>;
+  let usersService: jest.Mocked<
+    Pick<UsersService, 'findByEmailForAuth' | 'findByEmail' | 'create' | 'update'>
+  >;
+  let profile: { build: jest.Mock };
   let tokenService: jest.Mocked<Pick<TokenService, 'issueTokenPair' | 'toAuthUser' | 'saveTotpChallenge'>>;
   let totpService: jest.Mocked<Pick<TotpService, 'generate'>>;
 
@@ -27,6 +30,10 @@ describe('AuthService', () => {
       findByEmailForAuth: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+    };
+    profile = {
+      build: jest.fn(),
     };
     tokenService = {
       issueTokenPair: jest.fn().mockResolvedValue(tokens),
@@ -51,7 +58,7 @@ describe('AuthService', () => {
       {
         get: (key: string) => (key === 'AUTH_2FA_ENABLED' ? false : 'test'),
       } as unknown as ConfigService<Env, true>,
-      {} as never,
+      profile as never,
       { write: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
@@ -122,5 +129,45 @@ describe('AuthService', () => {
 
     expect(result.status).toBe('ok');
     expect(tokenService.issueTokenPair).toHaveBeenCalled();
+  });
+
+  it('updates own profile fields', async () => {
+    const me = { id: 'u1', firstName: 'Anna', lastName: 'Ivanova' };
+    usersService.update.mockResolvedValue({} as never);
+    profile.build.mockResolvedValue(me);
+
+    const result = await service.updateProfile('u1', UserRole.CASHIER, {
+      firstName: 'Anna',
+      lastName: 'Ivanova',
+      phone: '+77001112233',
+    });
+
+    expect(usersService.update).toHaveBeenCalledWith('u1', {
+      firstName: 'Anna',
+      lastName: 'Ivanova',
+      email: undefined,
+      phone: '+77001112233',
+      locationId: undefined,
+    });
+    expect(result).toBe(me);
+  });
+
+  it('lets an admin change their sales location', async () => {
+    profile.build.mockResolvedValue({ id: 'admin', locationId: 'loc-2' });
+    usersService.update.mockResolvedValue({} as never);
+
+    await service.updateProfile('admin', UserRole.ADMIN, { locationId: 'loc-2' });
+
+    expect(usersService.update).toHaveBeenCalledWith(
+      'admin',
+      expect.objectContaining({ locationId: 'loc-2' }),
+    );
+  });
+
+  it('forbids a cashier from changing their sales location', async () => {
+    await expect(
+      service.updateProfile('u1', UserRole.CASHIER, { locationId: 'loc-2' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(usersService.update).not.toHaveBeenCalled();
   });
 });

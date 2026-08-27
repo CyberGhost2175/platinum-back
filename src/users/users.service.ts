@@ -112,12 +112,19 @@ export class UsersService {
     if (dto.lastName !== undefined) user.lastName = dto.lastName;
     if (dto.phone !== undefined) user.phone = dto.phone || null;
     if (dto.locationId !== undefined) {
-      user.locationId = dto.locationId;
-      user.location = dto.locationId
-        ? await this.usersRepository.manager.findOneByOrFail(Location, {
-            id: dto.locationId,
-          })
-        : null;
+      if (dto.locationId) {
+        const location = await this.usersRepository.manager.findOneBy(Location, {
+          id: dto.locationId,
+        });
+        if (!location) {
+          throw new NotFoundException('Location not found');
+        }
+        user.locationId = dto.locationId;
+        user.location = location;
+      } else {
+        user.locationId = null;
+        user.location = null;
+      }
     }
     if (dto.status !== undefined) {
       if (

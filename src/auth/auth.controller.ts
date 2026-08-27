@@ -22,6 +22,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { ApiAuth } from '../common/decorators/api-auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuditLog } from '../common/decorators/audit-log.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import {
@@ -44,6 +45,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { TotpCodeDto } from './dto/totp-code.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyTotpDto } from './dto/verify-totp.dto';
 import { AuthUser } from './types/auth.types';
 import { Request } from 'express';
@@ -215,6 +217,22 @@ export class AuthController {
   @ApiOkResponse({ type: MeResponseDto })
   me(@CurrentUser() user: AuthUser) {
     return this.authService.me(user.id);
+  }
+
+  @ApiAuth()
+  @Patch('me')
+  @AuditLog('auth')
+  @ApiOperation({
+    summary: 'Изменить свои данные профиля',
+    description:
+      'Имя, фамилия, телефон, email. Точку продаж может менять только admin.',
+  })
+  @ApiOkResponse({ type: MeResponseDto })
+  updateProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(user.id, user.role, dto);
   }
 }
 

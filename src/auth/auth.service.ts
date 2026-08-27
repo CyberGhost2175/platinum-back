@@ -23,6 +23,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ProfileService } from './profile.service';
 import { TokenService } from './token.service';
 import { TotpService } from './totp.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthUser, LoginResult, TokenPair } from './types/auth.types';
 
 export type AuthEventMeta = {
@@ -255,6 +256,20 @@ export class AuthService {
   }
 
   async me(userId: string) {
+    return this.profile.build(userId);
+  }
+
+  async updateProfile(userId: string, role: UserRole, dto: UpdateProfileDto) {
+    if (dto.locationId !== undefined && role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only an admin can change their sales location');
+    }
+    await this.usersService.update(userId, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email: dto.email,
+      phone: dto.phone,
+      locationId: role === UserRole.ADMIN ? dto.locationId : undefined,
+    });
     return this.profile.build(userId);
   }
 
