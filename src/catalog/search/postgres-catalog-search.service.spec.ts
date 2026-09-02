@@ -51,4 +51,21 @@ describe('PostgresCatalogSearchService', () => {
     expect(hits[1].match).toBe('name');
     expect(cache.set).toHaveBeenCalled();
   });
+
+  it('still searches if Redis cache is down', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const cache = {
+      get: jest.fn().mockRejectedValue(new Error('Redis is down')),
+      set: jest.fn().mockRejectedValue(new Error('Redis is down')),
+      getRaw: jest.fn().mockRejectedValue(new Error('Redis is down')),
+      incr: jest.fn().mockRejectedValue(new Error('Redis is down')),
+    };
+    const service = new PostgresCatalogSearchService(
+      { query } as never,
+      cache as never,
+    );
+
+    await expect(service.search('кольцо')).resolves.toEqual([]);
+    await expect(service.upsert({ id: 'p1', sku: 'PT-1', name: 'x', supplierId: 's1', supplierName: null })).resolves.toBeUndefined();
+  });
 });

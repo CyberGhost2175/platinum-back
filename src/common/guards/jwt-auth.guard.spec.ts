@@ -60,4 +60,18 @@ describe('JwtAuthGuard', () => {
       guard.canActivate(contextWithAuth('Bearer valid.token')),
     ).resolves.toBe(true);
   });
+
+  it('still accepts a valid token if Redis is down', async () => {
+    (jwtService.verifyAsync as jest.Mock).mockResolvedValue({
+      typ: 'access',
+      sub: 'u1',
+      email: 'a@b.c',
+      role: 'admin',
+      iat: Math.floor(Date.now() / 1000),
+    });
+    redis.get.mockRejectedValueOnce(new Error('Redis is down'));
+    await expect(
+      guard.canActivate(contextWithAuth('Bearer valid.token')),
+    ).resolves.toBe(true);
+  });
 });

@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
@@ -33,6 +33,25 @@ import { isStaleDate } from './stale-product.calculator';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function postgresCode(error: unknown): string | undefined {
+  if (!(error instanceof QueryFailedError)) {
+    return undefined;
+  }
+  const failed = error as QueryFailedError & {
+    code?: string;
+    driverError?: { code?: string; detail?: string };
+  };
+  return failed.driverError?.code ?? failed.code;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return postgresCode(error) === '23505';
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  return postgresCode(error) === '23503';
+}
+
 export type ProductWithStock = Product & {
   availableQty: number;
   stale: boolean;
@@ -45,6 +64,8 @@ export type ProductSearchResult = ProductWithStock & {
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
@@ -201,8 +222,17 @@ export class ProductsService {
   async findById(id: string): Promise<ProductWithStock> {
     const product = await this.loadByIdOrSku(id);
     const staleDays = this.config.get('STALE_ITEM_DAYS', { infer: true });
-    const [withStock] = await this.attachStock([product], staleDays);
-    return withStock;
+    try {
+      const [withStock] = await this.attachStock([product], staleDays);
+      return withStock;
+    } catch (error) {
+      this.logger.warn(
+        `Could not attach stock for ${product.sku}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return Object.assign(product, { availableQty: 0, stale: false });
+    }
   }
 
   async search(query: string, limit?: number): Promise<ProductSearchResult[]> {
@@ -224,28 +254,68 @@ export class ProductsService {
       : await this.nextReadableSku();
     await this.assertUniqueSku(sku);
     const goldTone = assertGoldTone(dto.metalCategory, dto.goldTone ?? null);
-    const product = await this.productsRepository.save(
-      this.productsRepository.create({
-        sku,
-        name: dto.name.trim(),
-        weight: dto.weight,
-        metalCategory: dto.metalCategory,
-        goldTone,
-        itemCategory: dto.itemCategory,
-        supplierId: dto.supplierId,
-        price: dto.price ?? null,
-        costPrice: dto.costPrice ?? null,
-      }),
-    );
-    await this.putInitialStock(
-      product.id,
-      sku,
-      dto.qty ?? 1,
-      dto.locationId,
-      user,
-    );
-    const saved = await this.findById(product.id);
-    await this.catalogSearch.upsert(toProductSearchDocument(saved));
+    const qty = dto.qty ?? 1;
+    const tags = initialItemTags(sku, qty);
+    let stockLocationId: string | null = null;
+    if (tags.length > 0) {
+      const location = dto.locationId
+        ? await this.locations.getOrFail(dto.locationId)
+        : await this.locations.getOrCreateDefaultWarehouse();
+      await this.locations.assertAccessible(user, location.id);
+      stockLocationId = location.id;
+    }
+
+    const productId = await this.dataSource.transaction(async (manager) => {
+      const products = manager.getRepository(Product);
+      const items = manager.getRepository(Item);
+      let product: Product;
+      try {
+        product = await products.save(
+          products.create({
+            sku,
+            name: dto.name.trim(),
+            weight: dto.weight,
+            metalCategory: dto.metalCategory,
+            goldTone,
+            itemCategory: dto.itemCategory,
+            supplierId: dto.supplierId,
+            price: dto.price ?? null,
+            costPrice: dto.costPrice ?? null,
+          }),
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictException('SKU already exists');
+        }
+        throw error;
+      }
+      if (stockLocationId && tags.length > 0) {
+        try {
+          await items.save(
+            tags.map((uniqueTag) =>
+              items.create({
+                uniqueTag,
+                productId: product.id,
+                locationId: stockLocationId as string,
+                status: ItemStatus.IN_STOCK,
+              }),
+            ),
+          );
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new ConflictException('Unique tag already exists');
+          }
+          if (isForeignKeyViolation(error)) {
+            throw new NotFoundException('Warehouse location is not configured');
+          }
+          throw error;
+        }
+      }
+      return product.id;
+    });
+
+    const saved = await this.findById(productId);
+    await this.indexProduct(saved);
     return saved;
   }
 
@@ -281,7 +351,7 @@ export class ProductsService {
     product.goldTone = assertGoldTone(metal, tone);
     await this.productsRepository.save(product);
     const saved = await this.findById(product.id);
-    await this.catalogSearch.upsert(toProductSearchDocument(saved));
+    await this.indexProduct(saved);
     return saved;
   }
 
@@ -339,7 +409,15 @@ export class ProductsService {
       });
       await manager.getRepository(Product).remove(current);
     });
-    await this.catalogSearch.remove(product.id);
+    try {
+      await this.catalogSearch.remove(product.id);
+    } catch (error) {
+      this.logger.warn(
+        `Catalog search remove failed for ${product.sku}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   count(): Promise<number> {
@@ -381,41 +459,15 @@ export class ProductsService {
     return product;
   }
 
-  private async putInitialStock(
-    productId: string,
-    sku: string,
-    qty: number,
-    locationId: string | undefined,
-    user: AuthUser,
-  ): Promise<void> {
-    const tags = initialItemTags(sku, qty);
-    if (tags.length === 0) {
-      return;
-    }
-    const location = locationId
-      ? await this.locations.getOrFail(locationId)
-      : await this.locations.getOrCreateDefaultWarehouse();
-    await this.locations.assertAccessible(user, location.id);
+  private async indexProduct(product: ProductWithStock): Promise<void> {
     try {
-      await this.itemsRepository.save(
-        tags.map((uniqueTag) =>
-          this.itemsRepository.create({
-            uniqueTag,
-            productId,
-            locationId: location.id,
-            status: ItemStatus.IN_STOCK,
-          }),
-        ),
-      );
+      await this.catalogSearch.upsert(toProductSearchDocument(product));
     } catch (error) {
-      if (
-        error instanceof QueryFailedError &&
-        (error as QueryFailedError & { driverError?: { code?: string } })
-          .driverError?.code === '23505'
-      ) {
-        throw new ConflictException('Unique tag already exists');
-      }
-      throw error;
+      this.logger.warn(
+        `Catalog search index failed for ${product.sku}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
     }
   }
 

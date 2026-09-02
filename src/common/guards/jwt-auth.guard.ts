@@ -55,7 +55,12 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Authentication required');
     }
 
-    const revokedAt = await this.redis.get(`auth:revoke:${payload.sub}`);
+    let revokedAt: string | null = null;
+    try {
+      revokedAt = await this.redis.get(`auth:revoke:${payload.sub}`);
+    } catch {
+      revokedAt = null;
+    }
     if (revokedAt && payload.iat && payload.iat * 1000 < Number(revokedAt)) {
       throw new UnauthorizedException('Authentication required');
     }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { RedisCacheService } from '../../common/redis/redis-cache.service';
@@ -29,6 +29,8 @@ interface SearchRow {
 
 @Injectable()
 export class PostgresCatalogSearchService implements CatalogSearchService {
+  private readonly logger = new Logger(PostgresCatalogSearchService.name);
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -49,9 +51,17 @@ export class PostgresCatalogSearchService implements CatalogSearchService {
       MAX_SEARCH_LIMIT,
     );
     const cacheKey = await this.cacheKey(normalized, limit);
-    const cached = await this.cache.get<CatalogSearchHit[]>(cacheKey);
-    if (cached) {
-      return cached;
+    try {
+      const cached = await this.cache.get<CatalogSearchHit[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Catalog search cache read failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
     }
 
     const like = `%${escapeIlike(normalized)}%`;
@@ -102,7 +112,15 @@ export class PostgresCatalogSearchService implements CatalogSearchService {
       this.toHits(supplierRows),
     ]).slice(0, limit);
 
-    await this.cache.set(cacheKey, hits, SEARCH_CACHE_TTL_SECONDS);
+    try {
+      await this.cache.set(cacheKey, hits, SEARCH_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        `Catalog search cache write failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
     return hits;
   }
 
@@ -123,11 +141,28 @@ export class PostgresCatalogSearchService implements CatalogSearchService {
   }
 
   private async cacheKey(query: string, limit: number): Promise<string> {
-    const generation = await this.cache.getRaw(SEARCH_CACHE_GEN_KEY);
-    return `catalog:search:${generation ?? '0'}:${query.toLowerCase()}:${limit}`;
+    try {
+      const generation = await this.cache.getRaw(SEARCH_CACHE_GEN_KEY);
+      return `catalog:search:${generation ?? '0'}:${query.toLowerCase()}:${limit}`;
+    } catch (error) {
+      this.logger.warn(
+        `Catalog search cache key failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return `catalog:search:0:${query.toLowerCase()}:${limit}`;
+    }
   }
 
   private async bumpCache(): Promise<void> {
-    await this.cache.incr(SEARCH_CACHE_GEN_KEY);
+    try {
+      await this.cache.incr(SEARCH_CACHE_GEN_KEY);
+    } catch (error) {
+      this.logger.warn(
+        `Catalog search cache bump failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 }
