@@ -119,7 +119,7 @@ GET  /api/shifts/current          → есть ли открытая смена
 POST /api/shifts/open             → если нет (locationId опционален)
 GET  /api/catalog/search?q=       → скан артикула / поиск названия
 POST /api/sales/drafts            → новый чек (нужна открытая смена)
-POST /api/sales/drafts/:id/items  → { itemId } или { productId, qty }
+POST /api/sales/drafts/:id/items  → { itemId } или { productId, qty, priceMinor? }
 PATCH /api/sales/drafts/:id       → скидка / промо SALE10 | VIP500
 POST /api/sales/drafts/:id/pay    → { paymentMethod: "cash"|"card" }
 POST /api/shifts/:id/close        → в конце дня (нельзя, если есть draft)
@@ -168,7 +168,7 @@ GET /api/catalog/suppliers
 GET /api/catalog/products         → фильтры + пагинация
 GET /api/catalog/products/:id
 GET /api/catalog/products/:id/stock
-GET /api/catalog/promotions       → низкий остаток + залежка
+GET /api/catalog/promotions       → низкий остаток
 ```
 
 ### Аналитика (admin / store_manager / online_manager)
@@ -273,29 +273,28 @@ Auth: **JWT**, если не указано Public.
 |---|---|---|
 | GET | `/api/products` | список + фильтры (см. query ниже) |
 | GET | `/api/products/search?q=` | поиск SKU/имя/поставщик |
-| GET | `/api/products/stale` | залежка |
 | POST | `/api/products` | создать SKU |
 | GET | `/api/products/:id` | карточка + `availableQty` (UUID или артикул) |
 | PATCH | `/api/products/:id` | обновить |
 | PATCH | `/api/products/:id/price` | `{ price: "45990.00" \| null }` |
 | DELETE | `/api/products/:id` | удалить, если нет Item |
 
-Query списка (`ProductFilterQueryDto`): `page`, `limit`, `metalCategory`, `itemCategory`, `goldTone`, `supplierId`, `locationId`, `priceMin`, `priceMax`, `stockStatus`, `stale`, `q` (артикул, имя, поставщик, вес, цена, металл, категория, цвет золота), `sortBy=name\|price\|createdAt\|sku\|availableQty\|weight\|supplier`, `sortOrder=ASC\|DESC`.
+Query списка (`ProductFilterQueryDto`): `page`, `limit`, `metalCategory`, `itemCategory`, `goldTone`, `supplierId`, `locationId`, `priceMin`, `priceMax`, `stockStatus`, `q` (артикул, имя, поставщик, вес, цена, металл, категория, цвет золота), `sortBy=name\|price\|createdAt\|sku\|availableQty\|weight\|supplier`, `sortOrder=ASC\|DESC`. Параметр `stale` игнорируется — фильтра залежки нет.
 
-`CreateProductDto`: `sku?` (если нет — сервер выдаст `PT-000001`, `PT-000002`, …), `name`, `weight` (строка граммов `"2.350"`), `metalCategory`, `goldTone?` (только для gold), `itemCategory`, `supplierId`, `price?`, `costPrice?`. UUID товара (`id`) внутренний; на бирках и в UI показывайте `sku`.
+`CreateProductDto`: `sku?` (если нет — сервер выдаст `PT-000001`, `PT-000002`, …), `name`, `weight` (строка граммов `"2.350"`), `metalCategory`, `goldTone?` (только для gold), `itemCategory`, `supplierId`, `price?`, `costPrice?`, `qty?` (сколько единиц положить на склад, по умолчанию **1**), `locationId?` (точка; иначе склад / первая локация). Без единиц товар не попадает в `stockStatus=in_stock` и на кассу. UUID товара (`id`) внутренний; на бирках и в UI показывайте `sku`.
 
 ### catalog — витрина (чтение)
 Роли: все кроме «никто»; write каталога на этих путях нет.
 
 | Метод | Путь | Зачем |
 |---|---|---|
-| GET | `/api/catalog/dictionaries` | enums для селектов |
+| GET | `/api/catalog/dictionaries` | enums для селектов; `goldToneOptions`: `{ value, label }` (`yellow` → «Жёлтое», не «Золотое») |
 | GET | `/api/catalog/suppliers` | поставщики |
 | GET | `/api/catalog/search?q=&limit=` | быстрый поиск кассы/витрины |
-| GET | `/api/catalog/promotions` | low stock + stale (`kind=low\|stale`) |
+| GET | `/api/catalog/stock-report` | остатки в граммах: металл, поставщики, категории, топ/низ изделий. Query: `metalCategory`, `itemCategory`, `goldTone`, `supplierId`, `locationId`, `scope=available\|in_stock\|on_display`, `q`, `productLimit`. Фильтра залежки нет. |
+| GET | `/api/catalog/promotions` | low stock (`kind=low`) |
 | GET | `/api/catalog/products` | те же фильтры, что у products |
 | GET | `/api/catalog/products/low-stock` | низкий остаток |
-| GET | `/api/catalog/products/stale` | залежка |
 | GET | `/api/catalog/products/:id` | карточка |
 | GET | `/api/catalog/products/:id/stock` | остатки **по локациям** |
 
@@ -358,8 +357,8 @@ READ: admin, store_manager, cashier, online_manager.
 |---|---|---|---|
 | POST | `/api/sales/drafts` | новый draft | `{ customerId?, locationId? }` |
 | PATCH | `/api/sales/drafts/:id` | скидка чека | `{ customerId?, discountMinor?, discountPercent?, promoCode? }` |
-| POST | `/api/sales/drafts/:id/items` | строка | `{ itemId? }` **или** `{ productId?, qty? }` + скидки/промо |
-| PATCH | `/api/sales/drafts/:id/items/:lineId` | скидка строки | `{ qty?, discountMinor?, discountPercent?, promoCode? }` |
+| POST | `/api/sales/drafts/:id/items` | строка | `{ itemId? }` **или** `{ productId?, qty? }` + `priceMinor?` + скидки/промо |
+| PATCH | `/api/sales/drafts/:id/items/:lineId` | цена / скидка строки | `{ qty?, priceMinor?, discountMinor?, discountPercent?, promoCode? }` |
 | DELETE | `/api/sales/drafts/:id/items/:lineId` | убрать строку | — |
 | DELETE | `/api/sales/drafts/:id` | отменить draft | 204 |
 | POST | `/api/sales/drafts/:id/pay` | оплатить | `{ paymentMethod: "cash"\|"card" }` |
@@ -368,7 +367,7 @@ READ: admin, store_manager, cashier, online_manager.
 | GET | `/api/sales/:id` | один чек | — |
 
 Промо: `SALE10` (10%), `VIP500` (500 ₽ = 50000 коп.).  
-`discountMinor` — копейки. После pay чек не редактируется. Два параллельных pay последней единицы: второй → **400**.
+`discountMinor` и `priceMinor` — копейки. Если у товара нет цены, строка создаётся с `0`, цену можно указать в чеке. После pay чек не редактируется. Два параллельных pay последней единицы: второй → **400**.
 
 ### customers
 Сейчас только список. Write API клиентов ещё нет (роль CREATE в матрице — на будущее).
@@ -462,6 +461,9 @@ Write API заказов ещё нет.
 ```
 metalCategory:   gold | silver | diamonds
 goldTone:        red | yellow | white          // только если metal = gold
+goldToneOptions: { value, label }[]
+                 red → Красное, yellow → Жёлтое, white → Белое
+                 (yellow — жёлтое, не «золотое»)
 itemCategory:    rings | earrings | studs | necklaces | bracelets | chains
 stockStatus:     in_stock | out_of_stock | low
 userRole:        admin | store_manager | cashier | online_manager | warehouse

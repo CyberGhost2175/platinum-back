@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsEnum,
   IsNumberString,
@@ -40,7 +41,12 @@ export class UpdateProductDto {
   @IsEnum(MetalCategory)
   metalCategory?: MetalCategory;
 
-  @ApiPropertyOptional({ enum: GoldTone, nullable: true })
+  @ApiPropertyOptional({
+    enum: GoldTone,
+    nullable: true,
+    description:
+      'Цвет золота: red — красное, yellow — жёлтое, white — белое. Не «золотое». Только при metalCategory=gold.',
+  })
   @IsOptional()
   @ValidateIf((_, value) => value !== null)
   @IsEnum(GoldTone)
@@ -57,12 +63,16 @@ export class UpdateProductDto {
   supplierId?: string;
 
   @ApiPropertyOptional({ nullable: true })
+  @Transform(({ value }) => (value === '' ? null : value))
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsNumberString()
   price?: string | null;
 
   @ApiPropertyOptional({ nullable: true, description: 'Себестоимость' })
+  @Transform(({ value }) => (value === '' ? null : value))
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsNumberString()
   costPrice?: string | null;
 }

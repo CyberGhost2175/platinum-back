@@ -7,15 +7,18 @@ import { Env } from '../config/env.validation';
 import { Item } from '../inventory/entities/item.entity';
 import { LocationsService } from '../locations/locations.service';
 import { CatalogPromotionsQueryDto, CatalogPromotionKind } from './dto/catalog-promotions-query.dto';
+import { StockReportQueryDto, StockReportScope } from './dto/stock-report-query.dto';
 import { ProductFilterQueryDto } from '../products/dto/product-filter-query.dto';
 import { StockAvailability } from '../products/enums/stock-availability.enum';
 import { ProductsService } from '../products/products.service';
-import { GoldTone } from '../products/enums/gold-tone.enum';
+import { GoldTone, goldToneOptions } from '../products/enums/gold-tone.enum';
 import { ItemCategory } from '../products/enums/item-category.enum';
 import { MetalCategory } from '../products/enums/metal-category.enum';
 import { Supplier } from '../products/entities/supplier.entity';
 import { ItemStatus } from '../inventory/enums/item-status.enum';
 import { LocationType } from '../locations/enums/location-type.enum';
+import { productSearchHints } from '../products/product-search.hints';
+import { assembleStockReport, StockReport, StockReportRow } from './catalog-stock-report';
 
 export interface ProductLocationStock {
   locationId: string;
@@ -43,6 +46,7 @@ export class CatalogService {
     return {
       metalCategories: Object.values(MetalCategory),
       goldTones: Object.values(GoldTone),
+      goldToneOptions: goldToneOptions(),
       itemCategories: Object.values(ItemCategory),
       itemStatuses: Object.values(ItemStatus),
       locationTypes: Object.values(LocationType),
@@ -58,7 +62,8 @@ export class CatalogService {
   }
 
   findProducts(query: ProductFilterQueryDto) {
-    return this.products.findMany(query);
+    const { stale: _stale, ...filters } = query;
+    return this.products.findMany(filters);
   }
 
   findById(id: string) {
@@ -70,8 +75,9 @@ export class CatalogService {
   }
 
   findLowStock(query: ProductFilterQueryDto) {
+    const { stale: _stale, ...filters } = query;
     return this.products.findMany({
-      ...query,
+      ...filters,
       stockStatus: StockAvailability.LOW,
     });
   }
@@ -81,6 +87,116 @@ export class CatalogService {
       ...query,
       stale: true,
     });
+  }
+
+  async stockReport(query: StockReportQueryDto): Promise<StockReport> {
+    const statuses = statusesForScope(query.scope ?? StockReportScope.AVAILABLE);
+    const qb = this.itemsRepository
+      .createQueryBuilder('item')
+      .innerJoin('item.product', 'product')
+      .innerJoin('product.supplier', 'supplier')
+      .select('product.id', 'productId')
+      .addSelect('product.sku', 'sku')
+      .addSelect('product.name', 'name')
+      .addSelect('product.weight', 'weight')
+      .addSelect('product.metalCategory', 'metalCategory')
+      .addSelect('product.goldTone', 'goldTone')
+      .addSelect('product.itemCategory', 'itemCategory')
+      .addSelect('product.supplierId', 'supplierId')
+      .addSelect('supplier.name', 'supplierName')
+      .addSelect('COUNT(item.id)::int', 'units')
+      .addSelect('(COUNT(item.id) * product.weight)::float8', 'grams')
+      .where('item.deletedAt IS NULL')
+      .andWhere('item.status IN (:...statuses)', { statuses })
+      .groupBy('product.id')
+      .addGroupBy('product.sku')
+      .addGroupBy('product.name')
+      .addGroupBy('product.weight')
+      .addGroupBy('product.metalCategory')
+      .addGroupBy('product.goldTone')
+      .addGroupBy('product.itemCategory')
+      .addGroupBy('product.supplierId')
+      .addGroupBy('supplier.name');
+
+    if (query.metalCategory) {
+      qb.andWhere('product.metalCategory = :metalCategory', {
+        metalCategory: query.metalCategory,
+      });
+    }
+    if (query.itemCategory) {
+      qb.andWhere('product.itemCategory = :itemCategory', {
+        itemCategory: query.itemCategory,
+      });
+    }
+    if (query.goldTone) {
+      qb.andWhere('product.goldTone = :goldTone', { goldTone: query.goldTone });
+    }
+    if (query.supplierId) {
+      qb.andWhere('product.supplierId = :supplierId', {
+        supplierId: query.supplierId,
+      });
+    }
+    if (query.locationId) {
+      const locationIds = await this.locations.findSubtreeIds(query.locationId);
+      if (locationIds.length) {
+        qb.andWhere('item.locationId IN (:...locationIds)', { locationIds });
+      }
+    }
+    if (query.q?.trim()) {
+      const raw = query.q.trim();
+      const q = `%${raw}%`;
+      const hints = productSearchHints(raw);
+      qb.andWhere(
+        `(
+          product.sku ILIKE :q
+          OR product.name ILIKE :q
+          OR supplier.name ILIKE :q
+          OR CAST(product.weight AS TEXT) ILIKE :q
+          OR CAST(product.metalCategory AS TEXT) ILIKE :q
+          OR CAST(product.itemCategory AS TEXT) ILIKE :q
+          OR COALESCE(CAST(product.goldTone AS TEXT), '') ILIKE :q
+          ${hints.metals.length ? 'OR product.metalCategory IN (:...searchMetals)' : ''}
+          ${hints.categories.length ? 'OR product.itemCategory IN (:...searchCategories)' : ''}
+          ${hints.tones.length ? 'OR product.goldTone IN (:...searchTones)' : ''}
+        )`,
+        {
+          q,
+          ...(hints.metals.length ? { searchMetals: hints.metals } : {}),
+          ...(hints.categories.length ? { searchCategories: hints.categories } : {}),
+          ...(hints.tones.length ? { searchTones: hints.tones } : {}),
+        },
+      );
+    }
+
+    const raw = await qb.getRawMany<{
+      productId: string;
+      sku: string;
+      name: string;
+      weight: string;
+      metalCategory: MetalCategory;
+      goldTone: GoldTone | null;
+      itemCategory: ItemCategory;
+      supplierId: string;
+      supplierName: string;
+      units: string | number;
+      grams: string | number;
+    }>();
+
+    const rows: StockReportRow[] = raw.map((row) => ({
+      productId: row.productId,
+      sku: row.sku,
+      name: row.name,
+      weight: String(row.weight),
+      metalCategory: row.metalCategory,
+      goldTone: row.goldTone,
+      itemCategory: row.itemCategory,
+      supplierId: row.supplierId,
+      supplierName: row.supplierName,
+      units: Number(row.units),
+      grams: Number(row.grams),
+    }));
+
+    return assembleStockReport(rows, query.productLimit ?? 8);
   }
 
   async promotions(query: CatalogPromotionsQueryDto) {
@@ -174,4 +290,10 @@ export class CatalogService {
     }
     return mapped;
   }
+}
+
+function statusesForScope(scope: StockReportScope): ItemStatus[] {
+  if (scope === StockReportScope.IN_STOCK) return [ItemStatus.IN_STOCK];
+  if (scope === StockReportScope.ON_DISPLAY) return [ItemStatus.ON_DISPLAY];
+  return [ItemStatus.IN_STOCK, ItemStatus.ON_DISPLAY];
 }

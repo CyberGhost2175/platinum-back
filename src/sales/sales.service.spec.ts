@@ -275,6 +275,29 @@ describe('SalesService', () => {
     ).rejects.toThrow('Insufficient stock');
   });
 
+  it('uses a custom unit price when priceMinor is provided', async () => {
+    await service.addItem('sale-1', user, { itemId: item.id, priceMinor: 200000 });
+    expect(saleItemRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ price: '200000', lineTotal: '200000' }),
+    );
+  });
+
+  it('allows adding an unpriced product at 0 until the cashier sets a price', async () => {
+    product.price = null;
+    await service.addItem('sale-1', user, { itemId: item.id });
+    expect(saleItemRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ price: '0', lineTotal: '0' }),
+    );
+  });
+
+  it('updates the unit price of a draft line', async () => {
+    saleItemRepo.findOne.mockResolvedValue(line);
+    await service.updateItem('sale-1', 'line-1', user, { priceMinor: 99000 });
+    expect(saleItemRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ price: '99000', lineTotal: '99000' }),
+    );
+  });
+
   it('marks the product out of stock after the last unit is sold', async () => {
     availableCount = 0;
     await service.pay('sale-1', user, { paymentMethod: PaymentMethod.CARD });

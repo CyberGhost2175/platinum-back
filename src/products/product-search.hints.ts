@@ -40,7 +40,7 @@ export function productSearchHints(raw: string): {
     categories.push(ItemCategory.CHAINS);
   }
 
-  if (hit(term, ['yellow', 'жёлт', 'желт', 'золотое'])) tones.push(GoldTone.YELLOW);
+  if (hit(term, ['yellow', 'жёлт', 'желт'])) tones.push(GoldTone.YELLOW);
   if (hit(term, ['white', 'бел', 'белое'])) tones.push(GoldTone.WHITE);
   if (hit(term, ['red', 'красн', 'красное'])) tones.push(GoldTone.RED);
 

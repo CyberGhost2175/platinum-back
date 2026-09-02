@@ -16,6 +16,7 @@ import {
 import { LocationsService } from '../locations/locations.service';
 import { CatalogPromotionsQueryDto } from './dto/catalog-promotions-query.dto';
 import { CatalogSearchQueryDto } from './dto/catalog-search-query.dto';
+import { StockReportQueryDto } from './dto/stock-report-query.dto';
 import { CatalogService } from './catalog.service';
 import { ProductFilterQueryDto } from '../products/dto/product-filter-query.dto';
 
@@ -30,7 +31,11 @@ export class CatalogController {
 
   @Get('dictionaries')
   @RequirePermission(PermissionResource.CATALOG, CrudAction.READ)
-  @ApiOperation({ summary: 'Справочники (металл, проба, категории, остаток)' })
+  @ApiOperation({
+    summary: 'Справочники (металл, цвет золота, категории, остаток)',
+    description:
+      'goldTones — коды (red/yellow/white). goldToneOptions — те же значения с подписями: Красное / Жёлтое / Белое. Yellow не называть «золотым».',
+  })
   @ApiOkResponse({ description: 'Словари каталога' })
   dictionaries() {
     return this.catalogService.dictionaries();
@@ -54,6 +59,24 @@ export class CatalogController {
   @ApiOkResponse({ description: 'Ранжированные товары с match и score' })
   search(@Query() query: CatalogSearchQueryDto) {
     return this.catalogService.search(query.q ?? '', query.limit);
+  }
+
+  @Get('stock-report')
+  @RequirePermission(PermissionResource.CATALOG, CrudAction.READ)
+  @ApiOperation({
+    summary: 'Остатки склада в граммах',
+    description:
+      'Сколько металла осталось (г), разбивка по поставщикам, категориям и цвету золота. Фильтры: металл, цвет, категория, поставщик, точка, склад/витрина, поиск.',
+  })
+  @ApiOkResponse({ description: 'Сводка остатков' })
+  async stockReport(
+    @CurrentUser() user: AuthUser,
+    @Query() query: StockReportQueryDto,
+  ) {
+    if (query.locationId) {
+      await this.locations.assertAccessible(user, query.locationId);
+    }
+    return this.catalogService.stockReport(query);
   }
 
   @Get('promotions')
@@ -91,8 +114,9 @@ export class CatalogController {
   @Get('products/stale')
   @RequirePermission(PermissionResource.CATALOG, CrudAction.READ)
   @ApiOperation({
-    summary: 'Залежавшиеся товары',
-    description: 'Единицы в наличии старше STALE_ITEM_DAYS (по умолчанию 180).',
+    summary: 'Товары в наличии',
+    deprecated: true,
+    description: 'Фильтр залежки снят. То же, что GET /catalog/products.',
   })
   @ApiOkResponse({ description: 'Страница товаров' })
   async stale(
@@ -102,7 +126,8 @@ export class CatalogController {
     if (query.locationId) {
       await this.locations.assertAccessible(user, query.locationId);
     }
-    return this.catalogService.findStale(query);
+    const { stale: _stale, ...filters } = query;
+    return this.catalogService.findProducts(filters);
   }
 
   @Get('products')

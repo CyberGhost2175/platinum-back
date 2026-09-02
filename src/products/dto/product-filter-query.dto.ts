@@ -38,7 +38,10 @@ export class ProductFilterQueryDto extends PaginationQueryDto {
   @IsEnum(ItemCategory)
   itemCategory?: ItemCategory;
 
-  @ApiPropertyOptional({ enum: GoldTone })
+  @ApiPropertyOptional({
+    enum: GoldTone,
+    description: 'Цвет золота: red — красное, yellow — жёлтое, white — белое',
+  })
   @IsOptional()
   @IsEnum(GoldTone)
   goldTone?: GoldTone;
@@ -69,8 +72,8 @@ export class ProductFilterQueryDto extends PaginationQueryDto {
   stockStatus?: StockAvailability;
 
   @ApiPropertyOptional({
-    description:
-      'Товары с нераспроданными единицами старше порога STALE_ITEM_DAYS',
+    deprecated: true,
+    description: 'Игнорируется: фильтр залежки снят',
   })
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true' || value === '1')

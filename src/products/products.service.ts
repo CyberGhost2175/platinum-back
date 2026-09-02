@@ -1,7 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
+import { AuthUser } from '../auth/types/auth.types';
 import { Env } from '../config/env.validation';
 import { paginated, Paginated, resolvePagination } from '../common/pagination';
 import { CATALOG_SEARCH } from '../catalog/search/catalog-search.tokens';
@@ -12,6 +13,7 @@ import {
   CatalogSearchMatch,
 } from '../catalog/search/catalog-search.types';
 import { Item } from '../inventory/entities/item.entity';
+import { ItemStatus } from '../inventory/enums/item-status.enum';
 import { AVAILABLE_FOR_SALE } from '../inventory/inventory-stock.calculator';
 import { LocationsService } from '../locations/locations.service';
 import { SaleItem } from '../sales/entities/sale-item.entity';
@@ -25,7 +27,7 @@ import { Supplier } from './entities/supplier.entity';
 import { StockAvailability } from './enums/stock-availability.enum';
 import { assertGoldTone } from './product-metal.rules';
 import { productSearchHints } from './product-search.hints';
-import { formatProductSku } from './product-sku';
+import { formatProductSku, initialItemTags } from './product-sku';
 import { isStaleDate } from './stale-product.calculator';
 
 const UUID_RE =
@@ -215,7 +217,7 @@ export class ProductsService {
     });
   }
 
-  async create(dto: CreateProductDto): Promise<Product> {
+  async create(dto: CreateProductDto, user: AuthUser): Promise<ProductWithStock> {
     await this.assertSupplier(dto.supplierId);
     const sku = dto.sku?.trim()
       ? dto.sku.trim()
@@ -234,6 +236,13 @@ export class ProductsService {
         price: dto.price ?? null,
         costPrice: dto.costPrice ?? null,
       }),
+    );
+    await this.putInitialStock(
+      product.id,
+      sku,
+      dto.qty ?? 1,
+      dto.locationId,
+      user,
     );
     const saved = await this.findById(product.id);
     await this.catalogSearch.upsert(toProductSearchDocument(saved));
@@ -370,6 +379,44 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
     return product;
+  }
+
+  private async putInitialStock(
+    productId: string,
+    sku: string,
+    qty: number,
+    locationId: string | undefined,
+    user: AuthUser,
+  ): Promise<void> {
+    const tags = initialItemTags(sku, qty);
+    if (tags.length === 0) {
+      return;
+    }
+    const location = locationId
+      ? await this.locations.getOrFail(locationId)
+      : await this.locations.getOrCreateDefaultWarehouse();
+    await this.locations.assertAccessible(user, location.id);
+    try {
+      await this.itemsRepository.save(
+        tags.map((uniqueTag) =>
+          this.itemsRepository.create({
+            uniqueTag,
+            productId,
+            locationId: location.id,
+            status: ItemStatus.IN_STOCK,
+          }),
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { driverError?: { code?: string } })
+          .driverError?.code === '23505'
+      ) {
+        throw new ConflictException('Unique tag already exists');
+      }
+      throw error;
+    }
   }
 
   private async nextReadableSku(): Promise<string> {

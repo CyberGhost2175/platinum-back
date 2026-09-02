@@ -58,6 +58,30 @@ export class LocationsService {
     return warehouse;
   }
 
+  async getOrCreateDefaultWarehouse(): Promise<Location> {
+    try {
+      return await this.findDefaultWarehouse();
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+    }
+    const fallback = await this.locations.findOne({
+      order: { createdAt: 'ASC' },
+    });
+    if (fallback) {
+      return fallback;
+    }
+    const saved = await this.locations.save(
+      this.locations.create({
+        name: 'Центральный склад',
+        type: LocationType.WAREHOUSE,
+        parentId: null,
+      }),
+    );
+    return this.findOneWithParent(saved.id);
+  }
+
   async isAccessible(user: AuthUser, locationId: string): Promise<boolean> {
     if (isLocationUnrestricted(user.role)) {
       return true;

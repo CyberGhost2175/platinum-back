@@ -30,6 +30,16 @@ export class AddDraftItemDto {
   @Max(50)
   qty?: number;
 
+  @ApiPropertyOptional({
+    description: 'Цена позиции в копейках. Если не передана — берётся цена товара, иначе 0',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  priceMinor?: number;
+
   @ApiPropertyOptional({ description: 'Скидка позиции в копейках' })
   @IsOptional()
   @Type(() => Number)

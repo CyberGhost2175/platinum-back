@@ -48,7 +48,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Список товаров с фильтрами и пагинацией',
     description:
-      'Фильтры: металл, категория, оттенок, поставщик, цена, локация, статус остатка, залежавшиеся. Сортировка: sortBy + sortOrder.',
+      'Фильтры: металл, категория, оттенок, поставщик, цена, локация, статус остатка. Сортировка: sortBy + sortOrder.',
   })
   @ApiOkResponse({ description: 'Страница товаров с availableQty и stale' })
   async findMany(
@@ -58,7 +58,8 @@ export class ProductsController {
     if (query.locationId) {
       await this.locations.assertAccessible(user, query.locationId);
     }
-    return this.productsService.findMany(query);
+    const { stale: _stale, ...filters } = query;
+    return this.productsService.findMany(filters);
   }
 
   @Get('search')
@@ -75,11 +76,13 @@ export class ProductsController {
   @Get('stale')
   @RequirePermission(PermissionResource.PRODUCTS_INVENTORY, CrudAction.READ)
   @ApiOperation({
-    summary: 'Залежавшиеся товары',
-    description: 'Единицы в наличии старше STALE_ITEM_DAYS (по умолчанию 180).',
+    summary: 'Список товаров',
+    deprecated: true,
+    description: 'Фильтр залежки снят. То же, что GET /products.',
   })
   findStale(@Query() query: ProductFilterQueryDto) {
-    return this.productsService.findMany({ ...query, stale: true });
+    const { stale: _stale, ...filters } = query;
+    return this.productsService.findMany(filters);
   }
 
   @Post()
@@ -88,11 +91,11 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Создать товар',
     description:
-      'Артикул (sku) можно не передавать — выдаётся PT-000001, PT-000002, … UUID остаётся внутренним id.',
+      'Артикул (sku) можно не передавать — выдаётся PT-000001, PT-000002, … По умолчанию кладётся 1 единица на склад, иначе список in_stock пустой. UUID остаётся внутренним id.',
   })
-  @ApiCreatedResponse({ description: 'Созданный товар' })
-  create(@Body() dto: CreateProductDto) {
-    return this.productsService.create(dto);
+  @ApiCreatedResponse({ description: 'Созданный товар с остатком' })
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateProductDto) {
+    return this.productsService.create(dto, user);
   }
 
   @Get(':id')

@@ -181,10 +181,7 @@ export class SalesService {
         if (!canAddItemToDraft(1, product.outOfStock)) {
           throw new BadRequestException('Product is out of stock');
         }
-        if (product.price === null) {
-          throw new BadRequestException('Product has no price');
-        }
-        const unitPrice = toKopecks(product.price);
+        const unitPrice = this.resolveUnitPrice(product, dto.priceMinor);
         const line = this.priceLine({
           qty: 1,
           unitPriceMinor: unitPrice,
@@ -227,6 +224,9 @@ export class SalesService {
       }
       if (dto.qty !== undefined && dto.qty !== 1) {
         throw new BadRequestException('Unique jewelry items are sold with qty = 1');
+      }
+      if (dto.priceMinor !== undefined) {
+        line.price = String(dto.priceMinor);
       }
       if (dto.promoCode !== undefined) {
         const promo = resolvePromo(dto.promoCode);
@@ -666,6 +666,16 @@ export class SalesService {
       );
       await manager.getRepository(Product).save(product);
     }
+  }
+
+  private resolveUnitPrice(product: Product, priceMinor?: number): number {
+    if (priceMinor !== undefined) {
+      return priceMinor;
+    }
+    if (product.price === null || product.price === undefined) {
+      return 0;
+    }
+    return toKopecks(product.price);
   }
 
   private async recalculate(manager: EntityManager, saleId: string): Promise<void> {

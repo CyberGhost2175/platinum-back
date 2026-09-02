@@ -1,4 +1,4 @@
-import { formatProductSku, isProductSku } from './product-sku';
+import { formatProductSku, initialItemTags, isProductSku } from './product-sku';
 
 describe('formatProductSku', () => {
   it('builds a readable sequential article', () => {
@@ -13,5 +13,19 @@ describe('isProductSku', () => {
     expect(isProductSku('PT-000001')).toBe(true);
     expect(isProductSku('pt-000042')).toBe(true);
     expect(isProductSku('2000000000001')).toBe(false);
+  });
+});
+
+describe('initialItemTags', () => {
+  it('numbers tags from the article', () => {
+    expect(initialItemTags('PT-000001', 2)).toEqual([
+      'PT-000001-01',
+      'PT-000001-02',
+    ]);
+  });
+
+  it('skips stock when qty is not a positive integer', () => {
+    expect(initialItemTags('PT-000001', 0)).toEqual([]);
+    expect(initialItemTags('PT-000001', 1.5)).toEqual([]);
   });
 });

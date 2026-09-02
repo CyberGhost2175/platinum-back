@@ -60,4 +60,26 @@ describe('CatalogService', () => {
       expect.objectContaining({ stale: true }),
     );
   });
+
+  it('exposes yellow gold as Жёлтое in dictionary options', () => {
+    const service = new CatalogService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { get: () => 2 } as unknown as ConfigService<Env, true>,
+    );
+
+    const dictionaries = service.dictionaries();
+
+    expect(dictionaries.goldTones).toContain('yellow');
+    expect(dictionaries.goldToneOptions).toEqual(
+      expect.arrayContaining([
+        { value: 'yellow', label: 'Жёлтое' },
+      ]),
+    );
+    expect(dictionaries.goldToneOptions.find((row) => row.value === 'yellow')?.label).not.toMatch(
+      /золот/i,
+    );
+  });
 });
