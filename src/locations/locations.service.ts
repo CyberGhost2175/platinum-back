@@ -66,8 +66,9 @@ export class LocationsService {
         throw error;
       }
     }
-    const fallback = await this.locations.findOne({
+    const [fallback] = await this.locations.find({
       order: { createdAt: 'ASC' },
+      take: 1,
     });
     if (fallback) {
       return fallback;

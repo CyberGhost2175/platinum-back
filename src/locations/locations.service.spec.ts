@@ -13,8 +13,8 @@ describe('LocationsService.getOrCreateDefaultWarehouse', () => {
       findOne: jest
         .fn()
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(created),
+      find: jest.fn().mockResolvedValueOnce([]),
       create: jest.fn((row: unknown) => row),
       save: jest.fn().mockResolvedValue(created),
     };
@@ -52,10 +52,8 @@ describe('LocationsService.getOrCreateDefaultWarehouse', () => {
   it('uses any location if there is no warehouse type', async () => {
     const salon = { id: 'salon-1', type: LocationType.STORE };
     const repo = {
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(salon),
+      findOne: jest.fn().mockResolvedValueOnce(null),
+      find: jest.fn().mockResolvedValueOnce([salon]),
       save: jest.fn(),
     };
     const service = new LocationsService(repo as never, {
@@ -63,6 +61,10 @@ describe('LocationsService.getOrCreateDefaultWarehouse', () => {
     } as never);
 
     await expect(service.getOrCreateDefaultWarehouse()).resolves.toBe(salon);
+    expect(repo.find).toHaveBeenCalledWith({
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
     expect(repo.save).not.toHaveBeenCalled();
   });
 });
