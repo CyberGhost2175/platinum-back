@@ -16,6 +16,12 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/main/platinum-back
-            git pull origin main
-            docker compose up -d --build app
-            docker compose exec -T app npx typeorm migration:run -d dist/database/data-source.js
+            flock -w 180 /tmp/platinum-back-deploy.lock bash -euxc '
+              git pull origin main
+              leftover=$(docker ps -aq --filter name=platinum-app)
+              if [ -n "$leftover" ]; then
+                docker rm -f $leftover
+              fi
+              docker compose up -d --build --remove-orphans --force-recreate app
+              docker compose exec -T app npx typeorm migration:run -d dist/database/data-source.js
+            '
